@@ -129,6 +129,74 @@ TEST(resonance_to_damping_max)
     ASSERT(d > 0.0f && d < 0.02f);
 }
 
+// --- First-order filter tests ---
+
+TEST(filter1_lp_passes_dc)
+{
+    // Low-pass should pass DC (1.0 in -> 1.0 out after settling)
+    vortex::Filter1 f;
+    vortex::filter1_configure_lp(f, 48000.0f, 1000.0f);
+    float out = 0.0f;
+    for (int i = 0; i < 4800; i++)  // 100ms settling
+        out = f.process_lp(1.0f);
+    ASSERT_NEAR(out, 1.0f, 0.001f);
+}
+
+TEST(filter1_hp_blocks_dc)
+{
+    // High-pass should block DC (1.0 in -> 0.0 out after settling)
+    vortex::Filter1 f;
+    vortex::filter1_configure_hp(f, 48000.0f, 1000.0f);
+    float out = 1.0f;
+    for (int i = 0; i < 4800; i++)
+        out = f.process_hp(1.0f);
+    ASSERT_NEAR(out, 0.0f, 0.001f);
+}
+
+TEST(filter1_lp_attenuates_high_freq)
+{
+    // LP at 100Hz should significantly attenuate a 10kHz sine
+    vortex::Filter1 f;
+    vortex::filter1_configure_lp(f, 48000.0f, 100.0f);
+
+    // Run 10kHz sine for 480 samples (10ms), measure last cycle amplitude
+    float maxOut = 0.0f;
+    for (int i = 0; i < 4800; i++) {
+        float in = sinf(2.0f * vortex::PI * 10000.0f * (float)i / 48000.0f);
+        float out = f.process_lp(in);
+        if (i > 4320)  // last 10% (settled)
+            if (fabsf(out) > maxOut) maxOut = fabsf(out);
+    }
+    // Should be well attenuated (< -20dB)
+    ASSERT(maxOut < 0.1f);
+}
+
+TEST(filter1_hp_attenuates_low_freq)
+{
+    // HP at 5kHz should significantly attenuate a 100Hz sine
+    vortex::Filter1 f;
+    vortex::filter1_configure_hp(f, 48000.0f, 5000.0f);
+
+    float maxOut = 0.0f;
+    for (int i = 0; i < 4800; i++) {
+        float in = sinf(2.0f * vortex::PI * 100.0f * (float)i / 48000.0f);
+        float out = f.process_hp(in);
+        if (i > 4320)
+            if (fabsf(out) > maxOut) maxOut = fabsf(out);
+    }
+    ASSERT(maxOut < 0.1f);
+}
+
+TEST(filter1_reset)
+{
+    vortex::Filter1 f;
+    vortex::filter1_configure_lp(f, 48000.0f, 1000.0f);
+    // Process some signal
+    for (int i = 0; i < 100; i++) f.process_lp(1.0f);
+    f.reset();
+    ASSERT_NEAR(f.z, 0.0f, 1e-6f);
+}
+
 int main()
 {
     printf("Vortex DSP Tests\n");
@@ -152,6 +220,13 @@ int main()
     run_cutoff_param_to_hz_max();
     run_resonance_to_damping_zero();
     run_resonance_to_damping_max();
+
+    printf("\nFirst-order filter:\n");
+    run_filter1_lp_passes_dc();
+    run_filter1_hp_blocks_dc();
+    run_filter1_lp_attenuates_high_freq();
+    run_filter1_hp_attenuates_low_freq();
+    run_filter1_reset();
 
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;

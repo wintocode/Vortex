@@ -67,4 +67,63 @@ inline float resonance_to_damping(int param)
     return 0.707f * (1.0f - t) + 0.01f * t;
 }
 
+// ============================================================
+// First-order state-space filter (6 dB/oct)
+// Ported from ivantsov-filters by Yuriy Ivantsov (C++20 -> C++11)
+// Reference: https://github.com/yIvantsov/ivantsov-filters
+// ============================================================
+
+struct Filter1
+{
+    float z;        // state variable
+    float b0, b1;   // coefficients
+
+    Filter1() : z(0.0f), b0(0.0f), b1(0.0f) {}
+
+    void reset() { z = 0.0f; }
+
+    // Low-pass output: theta*b1 + z
+    float process_lp(float x)
+    {
+        float theta = (x - z) * b0;
+        float y = theta * b1 + z;
+        z += theta;
+        return y;
+    }
+
+    // High-pass output: theta*b1
+    float process_hp(float x)
+    {
+        float theta = (x - z) * b0;
+        float y = theta * b1;
+        z += theta;
+        return y;
+    }
+};
+
+// Configure first-order low-pass coefficients
+// Uses Sigma frequency warping for audio-rate modulation quality
+inline void filter1_configure_lp(Filter1& f, float sample_rate, float cutoff_hz)
+{
+    float w = sample_rate / (2.0f * PI * cutoff_hz);
+    float sigma = INV_PI;
+    if (w > INV_PI)
+        sigma = 0.40824999f * (0.05843357f - w * w) / (0.04593294f - w * w);
+    float v = sqrtf(w * w + sigma * sigma);
+    f.b0 = 1.0f / (0.5f + v);
+    f.b1 = 0.5f + sigma;
+}
+
+// Configure first-order high-pass coefficients
+inline void filter1_configure_hp(Filter1& f, float sample_rate, float cutoff_hz)
+{
+    float w = sample_rate / (2.0f * PI * cutoff_hz);
+    float sigma = INV_PI;
+    if (w > INV_PI)
+        sigma = 0.40824999f * (0.05843357f - w * w) / (0.04593294f - w * w);
+    float v = sqrtf(w * w + sigma * sigma);
+    f.b0 = 1.0f / (0.5f + v);
+    f.b1 = w;
+}
+
 } // namespace vortex
