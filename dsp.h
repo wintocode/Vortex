@@ -126,4 +126,106 @@ inline void filter1_configure_hp(Filter1& f, float sample_rate, float cutoff_hz)
     f.b1 = w;
 }
 
+// ============================================================
+// Second-order state-space filter (12 dB/oct)
+// Ported from ivantsov-filters by Yuriy Ivantsov (C++20 -> C++11)
+// Reference: https://github.com/yIvantsov/ivantsov-filters
+// ============================================================
+
+enum Filter2Type
+{
+    F2_LP = 0,   // Low-pass
+    F2_HP,       // High-pass
+    F2_BP,       // Band-pass
+    F2_NOTCH,    // Notch (band reject)
+    F2_AP        // All-pass
+};
+
+struct Filter2
+{
+    float z0, z1;           // state variables
+    float b0, b1, b2, b3;   // coefficients
+
+    Filter2() : z0(0.0f), z1(0.0f), b0(0.0f), b1(0.0f), b2(0.0f), b3(0.0f) {}
+
+    void reset() { z0 = z1 = 0.0f; }
+
+    // Process for LP, Notch, AllPass (output includes z0 term)
+    float process_lna(float x)
+    {
+        float theta = (x - z0 - z1 * b1) * b0;
+        float y = theta * b3 + z1 * b2 + z0;
+        z0 += theta;
+        z1 = -z1 - theta * b1;
+        return y;
+    }
+
+    // Process for HP, BP (output excludes z0 term)
+    float process_hb(float x)
+    {
+        float theta = (x - z0 - z1 * b1) * b0;
+        float y = theta * b3 + z1 * b2;
+        z0 += theta;
+        z1 = -z1 - theta * b1;
+        return y;
+    }
+};
+
+// Configure second-order filter coefficients
+// Uses Sigma frequency warping for audio-rate modulation quality
+// damping = 1/(2*Q), e.g. 0.707 = Butterworth, lower = more resonant
+inline void filter2_configure(Filter2& f, float sample_rate, float cutoff_hz,
+                               float damping, Filter2Type type)
+{
+    float w = sample_rate / (SQRT2 * PI * cutoff_hz);
+    float sigma = SQRT2 * INV_PI;
+    if (w > INV_PI * SQRT2)
+        sigma = 0.57735268f * (0.11686715f - w * w) / (0.09186588f - w * w);
+
+    float w_sq = w * w;
+    float sigma_sq = sigma * sigma;
+    float zeta_sq = damping * damping;
+
+    // vk computation (state-space eigenvalue decomposition)
+    float t = w_sq * (2.0f * zeta_sq - 1.0f);
+    float v = sqrtf(w_sq * w_sq + sigma_sq * (2.0f * t + sigma_sq));
+    float k = t + sigma_sq;
+
+    f.b0 = 1.0f / (v + sqrtf(v + k) + 0.5f);
+    f.b1 = sqrtf(2.0f * v);
+
+    switch (type)
+    {
+    case F2_LP:
+        f.b2 = 2.0f * sigma_sq / f.b1;
+        f.b3 = 0.5f + sigma_sq + SQRT2 * sigma;
+        break;
+    case F2_HP:
+        f.b2 = 2.0f * w_sq / f.b1;
+        f.b3 = w_sq;
+        break;
+    case F2_BP:
+        f.b2 = 4.0f * w * damping * sigma / f.b1;
+        f.b3 = 2.0f * w * damping * (sigma + INV_SQRT2);
+        break;
+    case F2_NOTCH:
+        f.b2 = 2.0f * (w_sq - sigma_sq) / f.b1;
+        f.b3 = 0.5f + w_sq - sigma_sq;
+        break;
+    case F2_AP:
+        f.b2 = f.b1;
+        f.b3 = 0.5f + v - sqrtf(v + k);
+        break;
+    }
+}
+
+// Process one sample through a second-order filter
+inline float filter2_process(Filter2& f, float x, Filter2Type type)
+{
+    if (type == F2_HP || type == F2_BP)
+        return f.process_hb(x);
+    else
+        return f.process_lna(x);
+}
+
 } // namespace vortex

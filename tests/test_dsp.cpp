@@ -197,6 +197,139 @@ TEST(filter1_reset)
     ASSERT_NEAR(f.z, 0.0f, 1e-6f);
 }
 
+// --- Second-order filter tests ---
+
+TEST(filter2_lp_passes_dc)
+{
+    vortex::Filter2 f;
+    vortex::filter2_configure(f, 48000.0f, 1000.0f, 0.707f, vortex::F2_LP);
+    float out = 0.0f;
+    for (int i = 0; i < 4800; i++)
+        out = vortex::filter2_process(f, 1.0f, vortex::F2_LP);
+    ASSERT_NEAR(out, 1.0f, 0.001f);
+}
+
+TEST(filter2_hp_blocks_dc)
+{
+    vortex::Filter2 f;
+    vortex::filter2_configure(f, 48000.0f, 1000.0f, 0.707f, vortex::F2_HP);
+    float out = 1.0f;
+    for (int i = 0; i < 4800; i++)
+        out = vortex::filter2_process(f, 1.0f, vortex::F2_HP);
+    ASSERT_NEAR(out, 0.0f, 0.001f);
+}
+
+TEST(filter2_bp_blocks_dc)
+{
+    vortex::Filter2 f;
+    vortex::filter2_configure(f, 48000.0f, 1000.0f, 0.707f, vortex::F2_BP);
+    float out = 1.0f;
+    for (int i = 0; i < 4800; i++)
+        out = vortex::filter2_process(f, 1.0f, vortex::F2_BP);
+    ASSERT_NEAR(out, 0.0f, 0.01f);
+}
+
+TEST(filter2_notch_passes_dc)
+{
+    // Notch passes DC (only rejects at center frequency)
+    vortex::Filter2 f;
+    vortex::filter2_configure(f, 48000.0f, 1000.0f, 0.707f, vortex::F2_NOTCH);
+    float out = 0.0f;
+    for (int i = 0; i < 4800; i++)
+        out = vortex::filter2_process(f, 1.0f, vortex::F2_NOTCH);
+    ASSERT_NEAR(out, 1.0f, 0.001f);
+}
+
+TEST(filter2_ap_passes_dc)
+{
+    // Allpass passes DC (unity gain, only phase shifts)
+    vortex::Filter2 f;
+    vortex::filter2_configure(f, 48000.0f, 1000.0f, 0.707f, vortex::F2_AP);
+    float out = 0.0f;
+    for (int i = 0; i < 4800; i++)
+        out = vortex::filter2_process(f, 1.0f, vortex::F2_AP);
+    ASSERT_NEAR(out, 1.0f, 0.001f);
+}
+
+TEST(filter2_lp_attenuates_high_freq)
+{
+    vortex::Filter2 f;
+    vortex::filter2_configure(f, 48000.0f, 100.0f, 0.707f, vortex::F2_LP);
+    float maxOut = 0.0f;
+    for (int i = 0; i < 4800; i++) {
+        float in = sinf(2.0f * vortex::PI * 10000.0f * (float)i / 48000.0f);
+        float out = vortex::filter2_process(f, in, vortex::F2_LP);
+        if (i > 4320)
+            if (fabsf(out) > maxOut) maxOut = fabsf(out);
+    }
+    // 12dB/oct should attenuate more than 6dB/oct
+    ASSERT(maxOut < 0.01f);
+}
+
+TEST(filter2_resonance_peak)
+{
+    // High resonance (low damping) should create a peak at cutoff
+    vortex::Filter2 f;
+    float cutoff = 1000.0f;
+    vortex::filter2_configure(f, 48000.0f, cutoff, 0.05f, vortex::F2_LP);
+
+    // Feed sine at cutoff frequency, should resonate
+    float maxOut = 0.0f;
+    for (int i = 0; i < 9600; i++) {
+        float in = sinf(2.0f * vortex::PI * cutoff * (float)i / 48000.0f) * 0.1f;
+        float out = vortex::filter2_process(f, in, vortex::F2_LP);
+        if (i > 4800)
+            if (fabsf(out) > maxOut) maxOut = fabsf(out);
+    }
+    // Output should be boosted above input amplitude (0.1)
+    ASSERT(maxOut > 0.2f);
+}
+
+TEST(filter2_cascade_steeper)
+{
+    // 4-pole (two cascaded 2nd-order) should attenuate more than single 2nd-order
+    float fs = 48000.0f;
+    float fc = 500.0f;
+    float testFreq = 8000.0f;
+
+    // Single stage
+    vortex::Filter2 f1;
+    vortex::filter2_configure(f1, fs, fc, 0.707f, vortex::F2_LP);
+    float maxSingle = 0.0f;
+    for (int i = 0; i < 4800; i++) {
+        float in = sinf(2.0f * vortex::PI * testFreq * (float)i / fs);
+        float out = vortex::filter2_process(f1, in, vortex::F2_LP);
+        if (i > 4320)
+            if (fabsf(out) > maxSingle) maxSingle = fabsf(out);
+    }
+
+    // Two cascaded stages
+    vortex::Filter2 f2a, f2b;
+    vortex::filter2_configure(f2a, fs, fc, 0.707f, vortex::F2_LP);
+    vortex::filter2_configure(f2b, fs, fc, 0.707f, vortex::F2_LP);
+    float maxCascade = 0.0f;
+    for (int i = 0; i < 4800; i++) {
+        float in = sinf(2.0f * vortex::PI * testFreq * (float)i / fs);
+        float mid = vortex::filter2_process(f2a, in, vortex::F2_LP);
+        float out = vortex::filter2_process(f2b, mid, vortex::F2_LP);
+        if (i > 4320)
+            if (fabsf(out) > maxCascade) maxCascade = fabsf(out);
+    }
+
+    // Cascade should be significantly more attenuated
+    ASSERT(maxCascade < maxSingle * 0.5f);
+}
+
+TEST(filter2_reset)
+{
+    vortex::Filter2 f;
+    vortex::filter2_configure(f, 48000.0f, 1000.0f, 0.707f, vortex::F2_LP);
+    for (int i = 0; i < 100; i++) vortex::filter2_process(f, 1.0f, vortex::F2_LP);
+    f.reset();
+    ASSERT_NEAR(f.z0, 0.0f, 1e-6f);
+    ASSERT_NEAR(f.z1, 0.0f, 1e-6f);
+}
+
 int main()
 {
     printf("Vortex DSP Tests\n");
@@ -227,6 +360,17 @@ int main()
     run_filter1_lp_attenuates_high_freq();
     run_filter1_hp_attenuates_low_freq();
     run_filter1_reset();
+
+    printf("\nSecond-order filter:\n");
+    run_filter2_lp_passes_dc();
+    run_filter2_hp_blocks_dc();
+    run_filter2_bp_blocks_dc();
+    run_filter2_notch_passes_dc();
+    run_filter2_ap_passes_dc();
+    run_filter2_lp_attenuates_high_freq();
+    run_filter2_resonance_peak();
+    run_filter2_cascade_steeper();
+    run_filter2_reset();
 
     printf("\n%d/%d tests passed\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;
