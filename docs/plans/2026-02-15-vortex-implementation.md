@@ -1,5 +1,7 @@
 # Vortex Multi-mode Filter Implementation Plan
 
+> **Status: COMPLETE** — All 7 tasks implemented. The code has since evolved beyond this plan (12-mode refactor replacing the original 7-mode + Poles design). See the codebase for current state.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Build a mono multi-mode filter plugin for Disting NT using ported ivantsov-filters DSP (by Yuriy Ivantsov).
