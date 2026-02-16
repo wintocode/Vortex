@@ -8,15 +8,14 @@
 
 struct _vortexAlgorithm : public _NT_algorithm
 {
-    // Filter state (two stages for 4-pole cascading)
-    vortex::Filter1 f1a, f1b;   // first-order filters (LP6/HP6)
-    vortex::Filter2 f2a, f2b;   // second-order filters (LP12/HP12/BP/Notch/AP)
+    // Filter state (two stages for cascaded modes)
+    vortex::Filter1 f1;          // first-order filter (LP6/HP6)
+    vortex::Filter2 f2a, f2b;    // second-order filters (12dB modes + cascaded 24dB)
 
     // Cached parameters (set by parameterChanged)
-    int mode;             // 0-6: LP6, LP12, HP6, HP12, BP, Notch, AP
+    int mode;             // 0-11: LP6/LP12/LP24/HP6/HP12/HP24/BP/BP+/Notch/Notch+/AP/AP+
     float cutoffHz;       // 20-20000 Hz (from param + MIDI)
     float damping;        // resonance mapped to damping
-    int poles;            // 0=2-pole, 1=4-pole
     float drive;          // 0.0-1.0
     float mix;            // 0.0-1.0
     float fmDepth;        // -1.0 to 1.0
@@ -35,7 +34,6 @@ struct _vortexAlgorithm : public _NT_algorithm
         mode = 1;           // LP12
         cutoffHz = 632.0f;  // ~mid-range (param 500)
         damping = 0.707f;   // Butterworth
-        poles = 0;          // 2-pole
         drive = 0.0f;
         mix = 1.0f;         // fully wet
         fmDepth = 0.0f;
@@ -58,14 +56,13 @@ enum {
     kParamOutput,
     kParamOutputMode,
 
-    // Filter (5)
+    // Filter (4)
     kParamMode,
     kParamCutoff,
     kParamResonance,
-    kParamPoles,
     kParamDrive,
 
-    // Global (3)
+    // Global (4)
     kParamMix,
     kParamFMDepth,
     kParamMidiChannel,
@@ -86,9 +83,12 @@ enum {
 // --- Enum strings ---
 
 static const char* modeStrings[] = {
-    "LP 6dB", "LP 12dB", "HP 6dB", "HP 12dB", "Bandpass", "Notch", "Allpass", NULL
+    "LP 6dB", "LP 12dB", "LP 24dB",
+    "HP 6dB", "HP 12dB", "HP 24dB",
+    "BP", "BP+",
+    "Notch", "Notch+",
+    "AP", "AP+", NULL
 };
-static const char* polesStrings[] = { "2-pole", "4-pole", NULL };
 static const char* versionStrings[] = { VORTEX_VERSION, NULL };
 
 // --- Parameter definitions ---
@@ -99,10 +99,9 @@ static _NT_parameter parameters[] = {
     NT_PARAMETER_AUDIO_OUTPUT_WITH_MODE( "Output", 1, 1 )
 
     // Filter
-    { "Mode",       0,    6,    1, kNT_unitEnum,       0, modeStrings },
+    { "Mode",       0,   11,    1, kNT_unitEnum,       0, modeStrings },
     { "Cutoff",     0, 1000,  500, kNT_unitHasStrings, 0, NULL },
     { "Resonance",  0, 1000,    0, kNT_unitHasStrings, kNT_scaling10, NULL },
-    { "Poles",      0,    1,    0, kNT_unitEnum,       0, polesStrings },
     { "Drive",      0, 1000,    0, kNT_unitPercent,    kNT_scaling10, NULL },
 
     // Global
@@ -127,7 +126,7 @@ static _NT_parameter parameters[] = {
 
 static const uint8_t pageIO[] = { kParamInput, kParamOutput, kParamOutputMode };
 static const uint8_t pageFilter[] = {
-    kParamMode, kParamCutoff, kParamResonance, kParamPoles, kParamDrive
+    kParamMode, kParamCutoff, kParamResonance, kParamDrive
 };
 static const uint8_t pageGlobal[] = {
     kParamMix, kParamFMDepth, kParamVersion
@@ -153,12 +152,12 @@ static const _NT_parameterPages parameterPages = {
 
 // --- MIDI CC mapping ---
 
-// CC14-22 -> 9 value parameters
+// CC14-20 -> 7 value parameters
 static const int8_t ccToParam[128] = {
     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,                     // 0-13
-    kParamMode, kParamCutoff, kParamResonance, kParamPoles,          // 14-17
-    kParamDrive, kParamMix, kParamFMDepth, kParamMidiChannel,        // 18-21
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,               // 22-37
+    kParamMode, kParamCutoff, kParamResonance, kParamDrive,          // 14-17
+    kParamMix, kParamFMDepth, kParamMidiChannel,                     // 18-20
+    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,            // 21-37
     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,               // 38-53
     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,               // 54-69
     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,               // 70-85
@@ -210,7 +209,7 @@ static void parameterChanged( _NT_algorithm* self, int parameter )
     case kParamMode:
         p->mode = p->v[parameter];
         // Reset filter state when mode changes to avoid transients
-        p->f1a.reset(); p->f1b.reset();
+        p->f1.reset();
         p->f2a.reset(); p->f2b.reset();
         break;
     case kParamCutoff:
@@ -218,9 +217,6 @@ static void parameterChanged( _NT_algorithm* self, int parameter )
         break;
     case kParamResonance:
         p->damping = vortex::resonance_to_damping( p->v[parameter] );
-        break;
-    case kParamPoles:
-        p->poles = p->v[parameter];
         break;
     case kParamDrive:
         p->drive = (float)p->v[parameter] * 0.001f;
@@ -287,11 +283,11 @@ static void step(
         int mode = p->mode;
         if ( cvMode )
         {
-            // CV mode: ±5V range, quantize to 0-6
-            int modeOffset = (int)( cvMode[i] * 1.4f );  // ~5V = 7 steps
+            // CV mode: ±5V range, quantize to 0-11
+            int modeOffset = (int)( cvMode[i] * 2.4f );  // ~5V = 12 steps
             mode = mode + modeOffset;
             if ( mode < 0 ) mode = 0;
-            if ( mode > 6 ) mode = 6;
+            if ( mode > 11 ) mode = 11;
         }
 
         // --- Compute effective cutoff ---
@@ -352,84 +348,82 @@ static void step(
 
         // --- Process through filter ---
         float wet = 0.0f;
-        bool fourPole = ( p->poles == 1 );
 
         switch ( mode )
         {
-        case 0: // LP 6dB (first-order LP)
-            vortex::filter1_configure_lp( p->f1a, fs, cutoff );
-            wet = p->f1a.process_lp( signal );
-            if ( fourPole )
-            {
-                vortex::filter1_configure_lp( p->f1b, fs, cutoff );
-                wet = p->f1b.process_lp( wet );
-            }
+        case 0: // LP 6dB
+            vortex::filter1_configure_lp( p->f1, fs, cutoff );
+            wet = p->f1.process_lp( signal );
             break;
 
-        case 1: // LP 12dB (second-order LP)
+        case 1: // LP 12dB
             vortex::filter2_configure( p->f2a, fs, cutoff, damping, vortex::F2_LP );
             wet = vortex::filter2_process( p->f2a, signal, vortex::F2_LP );
-            if ( fourPole )
-            {
-                vortex::filter2_configure( p->f2b, fs, cutoff, damping, vortex::F2_LP );
-                wet = vortex::filter2_process( p->f2b, wet, vortex::F2_LP );
-            }
             break;
 
-        case 2: // HP 6dB (first-order HP)
-            vortex::filter1_configure_hp( p->f1a, fs, cutoff );
-            wet = p->f1a.process_hp( signal );
-            if ( fourPole )
-            {
-                vortex::filter1_configure_hp( p->f1b, fs, cutoff );
-                wet = p->f1b.process_hp( wet );
-            }
+        case 2: // LP 24dB (cascaded)
+            vortex::filter2_configure( p->f2a, fs, cutoff, damping, vortex::F2_LP );
+            vortex::filter2_configure( p->f2b, fs, cutoff, damping, vortex::F2_LP );
+            wet = vortex::filter2_process( p->f2a, signal, vortex::F2_LP );
+            wet = vortex::filter2_process( p->f2b, wet, vortex::F2_LP );
             break;
 
-        case 3: // HP 12dB (second-order HP)
+        case 3: // HP 6dB
+            vortex::filter1_configure_hp( p->f1, fs, cutoff );
+            wet = p->f1.process_hp( signal );
+            break;
+
+        case 4: // HP 12dB
             vortex::filter2_configure( p->f2a, fs, cutoff, damping, vortex::F2_HP );
             wet = vortex::filter2_process( p->f2a, signal, vortex::F2_HP );
-            if ( fourPole )
-            {
-                vortex::filter2_configure( p->f2b, fs, cutoff, damping, vortex::F2_HP );
-                wet = vortex::filter2_process( p->f2b, wet, vortex::F2_HP );
-            }
             break;
 
-        case 4: // Bandpass
+        case 5: // HP 24dB (cascaded)
+            vortex::filter2_configure( p->f2a, fs, cutoff, damping, vortex::F2_HP );
+            vortex::filter2_configure( p->f2b, fs, cutoff, damping, vortex::F2_HP );
+            wet = vortex::filter2_process( p->f2a, signal, vortex::F2_HP );
+            wet = vortex::filter2_process( p->f2b, wet, vortex::F2_HP );
+            break;
+
+        case 6: // BP
             vortex::filter2_configure( p->f2a, fs, cutoff, damping, vortex::F2_BP );
             wet = vortex::filter2_process( p->f2a, signal, vortex::F2_BP );
-            if ( fourPole )
-            {
-                vortex::filter2_configure( p->f2b, fs, cutoff, damping, vortex::F2_BP );
-                wet = vortex::filter2_process( p->f2b, wet, vortex::F2_BP );
-            }
             break;
 
-        case 5: // Notch
+        case 7: // BP+ (cascaded)
+            vortex::filter2_configure( p->f2a, fs, cutoff, damping, vortex::F2_BP );
+            vortex::filter2_configure( p->f2b, fs, cutoff, damping, vortex::F2_BP );
+            wet = vortex::filter2_process( p->f2a, signal, vortex::F2_BP );
+            wet = vortex::filter2_process( p->f2b, wet, vortex::F2_BP );
+            break;
+
+        case 8: // Notch
             vortex::filter2_configure( p->f2a, fs, cutoff, damping, vortex::F2_NOTCH );
             wet = vortex::filter2_process( p->f2a, signal, vortex::F2_NOTCH );
-            if ( fourPole )
-            {
-                vortex::filter2_configure( p->f2b, fs, cutoff, damping, vortex::F2_NOTCH );
-                wet = vortex::filter2_process( p->f2b, wet, vortex::F2_NOTCH );
-            }
             break;
 
-        case 6: // Allpass
+        case 9: // Notch+ (cascaded)
+            vortex::filter2_configure( p->f2a, fs, cutoff, damping, vortex::F2_NOTCH );
+            vortex::filter2_configure( p->f2b, fs, cutoff, damping, vortex::F2_NOTCH );
+            wet = vortex::filter2_process( p->f2a, signal, vortex::F2_NOTCH );
+            wet = vortex::filter2_process( p->f2b, wet, vortex::F2_NOTCH );
+            break;
+
+        case 10: // AP
             vortex::filter2_configure( p->f2a, fs, cutoff, damping, vortex::F2_AP );
             wet = vortex::filter2_process( p->f2a, signal, vortex::F2_AP );
-            if ( fourPole )
-            {
-                vortex::filter2_configure( p->f2b, fs, cutoff, damping, vortex::F2_AP );
-                wet = vortex::filter2_process( p->f2b, wet, vortex::F2_AP );
-            }
+            break;
+
+        case 11: // AP+ (cascaded)
+            vortex::filter2_configure( p->f2a, fs, cutoff, damping, vortex::F2_AP );
+            vortex::filter2_configure( p->f2b, fs, cutoff, damping, vortex::F2_AP );
+            wet = vortex::filter2_process( p->f2a, signal, vortex::F2_AP );
+            wet = vortex::filter2_process( p->f2b, wet, vortex::F2_AP );
             break;
         }
 
         // Flush denormals from filter state
-        p->f1a.z = vortex::flush_denormal( p->f1a.z );
-        p->f1b.z = vortex::flush_denormal( p->f1b.z );
+        p->f1.z = vortex::flush_denormal( p->f1.z );
         p->f2a.z0 = vortex::flush_denormal( p->f2a.z0 );
         p->f2a.z1 = vortex::flush_denormal( p->f2a.z1 );
         p->f2b.z0 = vortex::flush_denormal( p->f2b.z0 );

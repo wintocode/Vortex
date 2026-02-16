@@ -2,7 +2,7 @@
 
 Multi-mode filter plugin for the [Expert Sleepers Disting NT](https://expert-sleepers.co.uk/distingNT.html).
 
-7 filter modes with 2/4-pole cascading, pre-filter drive, MIDI keyboard tracking, and 8 CV inputs. Filter DSP ported from [ivantsov-filters](https://github.com/yIvantsov/ivantsov-filters) by Yuriy Ivantsov.
+12 filter modes with pre-filter drive, MIDI keyboard tracking, and 7 CV inputs. Filter DSP ported from [ivantsov-filters](https://github.com/yIvantsov/ivantsov-filters) by Yuriy Ivantsov.
 
 ## Installation
 
@@ -10,17 +10,20 @@ Copy `plugins/vortex.o` and `plugins/plugin.json` to your Disting NT SD card und
 
 ## Filter Modes
 
-| # | Mode    | Order | Slope      | With 4-pole |
-|---|---------|-------|------------|-------------|
-| 0 | LP 6dB  | 1st   | -6 dB/oct  | -12 dB/oct  |
-| 1 | LP 12dB | 2nd   | -12 dB/oct | -24 dB/oct  |
-| 2 | HP 6dB  | 1st   | +6 dB/oct  | +12 dB/oct  |
-| 3 | HP 12dB | 2nd   | +12 dB/oct | +24 dB/oct  |
-| 4 | BP      | 2nd   | bandpass   | narrower    |
-| 5 | Notch   | 2nd   | band reject| deeper      |
-| 6 | AP      | 2nd   | allpass    | more phase  |
-
-The **Poles** parameter (2/4) cascades two filter instances for steeper slopes.
+| #  | Mode    | Slope       | Description                    |
+|----|---------|-------------|--------------------------------|
+| 0  | LP 6dB  | -6 dB/oct   | 1st-order low-pass             |
+| 1  | LP 12dB | -12 dB/oct  | 2nd-order low-pass             |
+| 2  | LP 24dB | -24 dB/oct  | Cascaded 2nd-order low-pass    |
+| 3  | HP 6dB  | +6 dB/oct   | 1st-order high-pass            |
+| 4  | HP 12dB | +12 dB/oct  | 2nd-order high-pass            |
+| 5  | HP 24dB | +24 dB/oct  | Cascaded 2nd-order high-pass   |
+| 6  | BP      | bandpass    | 2nd-order band-pass            |
+| 7  | BP+     | bandpass    | Cascaded (narrower)            |
+| 8  | Notch   | band reject | 2nd-order notch                |
+| 9  | Notch+  | band reject | Cascaded (deeper)              |
+| 10 | AP      | allpass     | 2nd-order all-pass             |
+| 11 | AP+     | allpass     | Cascaded (more phase rotation) |
 
 ## Parameters
 
@@ -34,10 +37,9 @@ The **Poles** parameter (2/4) cascades two filter instances for steeper slopes.
 ### Filter
 | Parameter | Range       | Default | Description                     |
 |-----------|-------------|---------|---------------------------------|
-| Mode      | 0-6         | LP 12dB | Filter type                     |
+| Mode      | 0-11        | LP 12dB | Filter type (see table above)   |
 | Cutoff    | 20-20000 Hz | ~632 Hz | Cutoff frequency (exponential)  |
 | Resonance | 0-100%      | 0%      | Filter resonance                |
-| Poles     | 2/4         | 2-pole  | Single or cascaded stages       |
 | Drive     | 0-100%      | 0%      | Pre-filter soft-clip saturation |
 
 ### Global
@@ -70,11 +72,10 @@ The **Poles** parameter (2/4) cascades two filter instances for steeper slopes.
 | 14  | Mode         |
 | 15  | Cutoff       |
 | 16  | Resonance    |
-| 17  | Poles        |
-| 18  | Drive        |
-| 19  | Mix          |
-| 20  | FM Depth     |
-| 21  | MIDI Channel |
+| 17  | Drive        |
+| 18  | Mix          |
+| 19  | FM Depth     |
+| 20  | MIDI Channel |
 
 ## Building
 
