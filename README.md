@@ -2,7 +2,7 @@
 
 A multi-mode filter plugin for the [Expert Sleepers Disting NT](https://expert-sleepers.co.uk/distingNT.html).
 
-Vortex offers 12 filter modes from gentle 6 dB/oct slopes to steep 24 dB/oct cascades, with pre-filter drive, dry/wet mix, MIDI keyboard tracking, and 7 CV inputs. Use it for subtractive synthesis, DJ-style filter sweeps, resonant acid lines, or as a CV-controlled spectral shaper.
+Vortex offers 12 filter modes from gentle 6 dB/oct slopes to steep 24 dB/oct cascades, with pre-filter drive, dry/wet mix, and 7 CV inputs. Use it for subtractive synthesis, DJ-style filter sweeps, resonant acid lines, or as a CV-controlled spectral shaper.
 
 Filter DSP ported from [ivantsov-filters](https://github.com/yIvantsov/ivantsov-filters) by Yuriy Ivantsov — decramped IIR state-space filters with sigma frequency warping for clean audio-rate modulation.
 
@@ -60,12 +60,11 @@ Parameters are organized into pages on the Disting NT display.
 
 ### Global
 
-| Parameter    | Range        | Default | Description |
-|--------------|--------------|---------|-------------|
-| Mix          | 0-100%       | 100%    | Dry/wet blend. 0% = fully dry (bypass), 100% = fully wet |
-| FM Depth     | -100 to 100% | 0%     | Attenuverter for the FM CV input. Controls how much the FM CV modulates the cutoff frequency. Negative values invert the modulation. |
-| MIDI Channel | 1-16         | 1       | Which MIDI channel Vortex responds to |
-| Version      | read-only    | -       | Displays the current firmware version |
+| Parameter | Range        | Default | Description |
+|-----------|--------------|---------|-------------|
+| Mix       | 0-100%       | 100%    | Dry/wet blend. 0% = fully dry (bypass), 100% = fully wet |
+| FM Depth  | -100 to 100% | 0%     | Attenuverter for the FM CV input. Controls how much the FM CV modulates the cutoff frequency. Negative values invert the modulation. |
+| Version   | read-only    | -       | Displays the current firmware version |
 
 ### CV Inputs
 
@@ -81,34 +80,11 @@ Each CV input can be assigned to any bus on the Disting NT (0 = disconnected).
 | Drive        | Modulates drive amount (±20% of range per volt) |
 | Mix          | Modulates dry/wet blend (±20% of range per volt) |
 
-## MIDI Control
-
-Vortex responds to MIDI notes, pitch bend, and control change messages on the configured channel.
-
-**Note On/Off** — Sets the cutoff frequency to match the played note via keyboard tracking. While a note is held, the cutoff follows the MIDI pitch instead of the Cutoff knob. Release the note to return to knob control. This lets you play the filter melodically.
-
-**Pitch Bend** — ±2 semitones applied to the cutoff frequency.
-
-**Control Change mapping:**
-
-| CC  | Parameter    |
-|-----|--------------|
-| 14  | Mode         |
-| 15  | Cutoff       |
-| 16  | Resonance    |
-| 17  | Drive        |
-| 18  | Mix          |
-| 19  | FM Depth     |
-| 20  | MIDI Channel |
-
-CC values (0-127) are scaled to each parameter's full range.
-
 ## Patching Tips
 
 - **Subtractive synth** — Feed a sawtooth oscillator into Audio In, set LP 24dB, Resonance at 30-50%, and modulate Cutoff with an envelope via V/OCT CV for classic analog-style patches.
 - **Acid bass** — LP 12dB with high resonance (70-90%), moderate drive (30-50%), and a fast envelope on cutoff. The resonance peak creates the characteristic squelch.
 - **DJ filter sweep** — Use LP 24dB or HP 24dB with Mix at 100%. Sweep Cutoff manually or via CV for dramatic build-ups and breakdowns.
-- **Keyboard tracking** — Send MIDI notes to make the filter cutoff follow your melody. Works well with BP mode for vocal-like formant effects.
 - **Parallel filtering** — Set Output Mode to Mix and use multiple Vortex instances with different modes (e.g. LP + HP) on the same bus for creative crossover effects.
 - **Warm saturation** — Even without filtering, use Drive at 40-60% with Mix at 100% in AP mode for transparent soft-clip warmth.
 - **Phaser effect** — AP or AP+ mode with cutoff modulated by a slow LFO creates phase-shifting effects. Mix dry and wet signals for comb filtering.

@@ -14,18 +14,11 @@ struct _vortexAlgorithm : public _NT_algorithm
 
     // Cached parameters (set by parameterChanged)
     int mode;             // 0-11: LP6/LP12/LP24/HP6/HP12/HP24/BP/BP+/Notch/Notch+/AP/AP+
-    float cutoffHz;       // 20-20000 Hz (from param + MIDI)
+    float cutoffHz;       // 20-20000 Hz
     float damping;        // resonance mapped to damping
     float drive;          // 0.0-1.0
     float mix;            // 0.0-1.0
     float fmDepth;        // -1.0 to 1.0
-
-    // MIDI state
-    float midiCutoffHz;   // from note-on (keyboard tracking)
-    uint8_t midiGate;     // 0 or 1
-    uint8_t midiNote;     // last note number
-    float pitchBendMult;  // from pitch bend wheel
-    uint8_t midiChannel;  // 0-15
 
     float sampleRate;
 
@@ -37,12 +30,6 @@ struct _vortexAlgorithm : public _NT_algorithm
         drive = 0.0f;
         mix = 1.0f;         // fully wet
         fmDepth = 0.0f;
-
-        midiCutoffHz = 0.0f;
-        midiGate = 0;
-        midiNote = 60;
-        pitchBendMult = 1.0f;
-        midiChannel = 0;
 
         sampleRate = 48000.0f;
     }
@@ -62,10 +49,9 @@ enum {
     kParamResonance,
     kParamDrive,
 
-    // Global (4)
+    // Global (3)
     kParamMix,
     kParamFMDepth,
-    kParamMidiChannel,
     kParamVersion,
 
     // CV Inputs (7)
@@ -107,7 +93,6 @@ static _NT_parameter parameters[] = {
     // Global
     { "Mix",        0, 1000, 1000, kNT_unitPercent,    kNT_scaling10, NULL },
     { "FM Depth", -1000, 1000,  0, kNT_unitPercent,    kNT_scaling10, NULL },
-    { "MIDI Channel", 1,  16,   1, kNT_unitNone,       0, NULL },
 
     // Version (read-only)
     { "Version",    0,    0,   0, kNT_unitEnum,        0, versionStrings },
@@ -131,7 +116,6 @@ static const uint8_t pageFilter[] = {
 static const uint8_t pageGlobal[] = {
     kParamMix, kParamFMDepth, kParamVersion
 };
-static const uint8_t pageMIDI[] = { kParamMidiChannel };
 static const uint8_t pageCV[] = {
     kParamCVAudioIn, kParamCVCutoffVOCT, kParamCVCutoffFM,
     kParamCVResonance, kParamCVMode, kParamCVDrive, kParamCVMix
@@ -141,7 +125,6 @@ static const _NT_parameterPage pages[] = {
     { .name = "I/O",    .numParams = ARRAY_SIZE(pageIO),      .params = pageIO },
     { .name = "Filter", .numParams = ARRAY_SIZE(pageFilter),  .params = pageFilter },
     { .name = "Global", .numParams = ARRAY_SIZE(pageGlobal),  .params = pageGlobal },
-    { .name = "MIDI",   .numParams = ARRAY_SIZE(pageMIDI),    .params = pageMIDI },
     { .name = "CV",     .numParams = ARRAY_SIZE(pageCV),       .params = pageCV },
 };
 
@@ -149,30 +132,6 @@ static const _NT_parameterPages parameterPages = {
     .numPages = ARRAY_SIZE(pages),
     .pages = pages,
 };
-
-// --- MIDI CC mapping ---
-
-// CC14-20 -> 7 value parameters
-static const int8_t ccToParam[128] = {
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,                     // 0-13
-    kParamMode, kParamCutoff, kParamResonance, kParamDrive,          // 14-17
-    kParamMix, kParamFMDepth, kParamMidiChannel,                     // 18-20
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,            // 21-37
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,               // 38-53
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,               // 54-69
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,               // 70-85
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,               // 86-101
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,               // 102-117
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1                                   // 118-127
-};
-
-// Scale CC value (0-127) to parameter's min..max range
-static int16_t scaleCCToParam( uint8_t ccValue, int paramIndex )
-{
-    int16_t mn = parameters[paramIndex].min;
-    int16_t mx = parameters[paramIndex].max;
-    return mn + (int16_t)( (int32_t)ccValue * ( mx - mn ) / 127 );
-}
 
 // --- Lifecycle ---
 
@@ -226,9 +185,6 @@ static void parameterChanged( _NT_algorithm* self, int parameter )
         break;
     case kParamFMDepth:
         p->fmDepth = (float)p->v[parameter] * 0.001f;
-        break;
-    case kParamMidiChannel:
-        p->midiChannel = p->v[parameter] - 1;  // 1-16 -> 0-15
         break;
     }
 }
@@ -292,10 +248,6 @@ static void step(
 
         // --- Compute effective cutoff ---
         float cutoff = p->cutoffHz;
-
-        // MIDI keyboard tracking overrides base cutoff when gate is on
-        if ( p->midiGate && p->midiCutoffHz > 0.0f )
-            cutoff = p->midiCutoffHz * p->pitchBendMult;
 
         // V/OCT modulation (exponential)
         if ( cvVOCT )
@@ -440,66 +392,6 @@ static void step(
     }
 }
 
-// --- MIDI ---
-
-static void midiMessage(
-    _NT_algorithm* self,
-    uint8_t byte0,
-    uint8_t byte1,
-    uint8_t byte2 )
-{
-    _vortexAlgorithm* p = (_vortexAlgorithm*)self;
-
-    uint8_t status  = byte0 & 0xF0;
-    uint8_t channel = byte0 & 0x0F;
-
-    if ( channel != p->midiChannel )
-        return;
-
-    switch ( status )
-    {
-    case 0x90:  // Note On
-        if ( byte2 > 0 )
-        {
-            p->midiNote = byte1;
-            p->midiGate = 1;
-            p->midiCutoffHz = vortex::midi_note_to_freq( (float)byte1 );
-        }
-        else
-        {
-            if ( byte1 == p->midiNote )
-                p->midiGate = 0;
-        }
-        break;
-
-    case 0x80:  // Note Off
-        if ( byte1 == p->midiNote )
-            p->midiGate = 0;
-        break;
-
-    case 0xB0:  // Control Change
-    {
-        if ( byte1 >= 128 ) break;
-        int8_t paramIdx = ccToParam[byte1];
-        if ( paramIdx >= 0 )
-        {
-            int16_t value = scaleCCToParam( byte2, paramIdx );
-            NT_setParameterFromAudio( NT_algorithmIndex(self), paramIdx, value );
-        }
-        break;
-    }
-
-    case 0xE0:  // Pitch Bend
-    {
-        int16_t bend = ( (int16_t)byte2 << 7 ) | byte1;  // 0-16383
-        float bendNorm = (float)( bend - 8192 ) / 8192.0f;  // -1 to +1
-        // +/-2 semitones pitch bend range (applied to cutoff)
-        p->pitchBendMult = exp2f( bendNorm * 2.0f / 12.0f );
-        break;
-    }
-    }
-}
-
 // --- Parameter string display ---
 
 static int parameterString( _NT_algorithm* self, int param, int val, char* buff )
@@ -556,7 +448,7 @@ static const _NT_factory factory = {
     .step = step,
     .draw = NULL,
     .midiRealtime = NULL,
-    .midiMessage = midiMessage,
+    .midiMessage = NULL,
     .tags = kNT_tagEffect | kNT_tagFilterEQ,
     .hasCustomUi = NULL,
     .customUi = NULL,
