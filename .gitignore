@@ -1,4 +1,3 @@
-plugins/*.o
 tests/test_dsp
 tests/*.dSYM/
 .DS_Store

@@ -205,7 +205,7 @@ static void step(
     const float* audioIn = p->v[kParamInput]
         ? busFrames + ( p->v[kParamInput] - 1 ) * numFrames : NULL;
     float* out = busFrames + ( p->v[kParamOutput] - 1 ) * numFrames;
-    bool replace = p->v[kParamOutputMode] == 0;
+    bool replace = p->v[kParamOutputMode];
 
     // Read CV buses (0 = not connected)
     const float* cvAudioIn = p->v[kParamCVAudioIn]

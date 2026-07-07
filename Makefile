@@ -5,7 +5,13 @@ OUTPUT := plugins/vortex.o
 MANIFEST := plugins/plugin.json
 VERSION := $(shell cat VERSION)
 
+# Prefer official ARM toolchain (includes C++ stdlib), fall back to Homebrew's bare-metal GCC
+ARM_TC := $(HOME)/arm-gnu-toolchain/arm-gnu-toolchain-15.2.rel1-darwin-arm64-arm-none-eabi/bin
+ifeq ($(wildcard $(ARM_TC)/arm-none-eabi-c++),)
 CC := arm-none-eabi-c++
+else
+CC := $(ARM_TC)/arm-none-eabi-c++
+endif
 CFLAGS := -std=c++11 -mcpu=cortex-m7 -mfpu=fpv5-d16 -mfloat-abi=hard \
           -mthumb -fno-rtti -fno-exceptions -Os -fPIC -Wall \
           -I$(INCLUDE_PATH) \
